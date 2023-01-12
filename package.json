@@ -28,5 +28,7 @@
     "solhint": "https://github.com/LHerskind/solhint",
     "typechain": "^8.1.1",
     "typescript": "^4.9.3"
+  },
+  "dependencies": {
   }
 }
