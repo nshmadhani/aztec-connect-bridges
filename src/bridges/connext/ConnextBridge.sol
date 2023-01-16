@@ -15,7 +15,7 @@ import {AddressRegistry} from "../registry/AddressRegistry.sol";
  * @notice You can use this contract to deposit funds into other L2's using connext
  * @dev  This Bridge is resposible for bridging funds from Aztec to L2 using Connext xCall.
  */
-contract ConnextL2Bridge is BridgeBase {
+contract ConnextBridge is BridgeBase {
     IConnext public immutable connext;
 
     AddressRegistry public registry;
@@ -38,14 +38,16 @@ contract ConnextL2Bridge is BridgeBase {
     // Binary number 11111111111111111111 (last 20 bits)
     uint64 public constant RELAYED_FEE_MASK = 0xFFFFF;
 
-    uint64 public domainCount;
+    uint32 public domainCount;
 
-    mapping(uint64 => uint32) public domains;
+    mapping(uint32 => uint32) public domains;
 
     address public owner;
 
     modifier onlyOwner() {
-        require(owner == msg.sender, "onlOwner");
+        if (msg.sender != owner) {
+            revert ErrorLib.InvalidCaller();
+        }
         _;
     }
 
@@ -63,6 +65,8 @@ contract ConnextL2Bridge is BridgeBase {
         registry = AddressRegistry(_registry);
         owner = _onwer;
     }
+
+    //* can we do a recpt as output for bridging? */
 
     /**
      * @notice A function which returns an _totalInputValue amount of _inputAssetA
@@ -92,22 +96,22 @@ contract ConnextL2Bridge is BridgeBase {
             bool
         )
     {
-        require(
-            _inputAssetA.assetType == AztecTypes.AztecAssetType.ERC20,
-            ErrorLib.InvalidInputA()
-        );
+
+        if(_inputAssetA.assetType != AztecTypes.AztecAssetType.ERC20) {
+            revert ErrorLib.InvalidInputA();
+        }
 
         address tokenAddress = _inputAssetA.erc20Address;
         uint256 amount = _totalInputValue;
 
-        uint64 domainID = _auxData & DEST_DOMAIN_MASK;
+        uint32 domainID = uint32(_auxData & DEST_DOMAIN_MASK);
         uint64 toAddressID = (_auxData >> DEST_DOMAIN_MASK) & TO_MASK;
         uint64 slippageAndFee = ((_auxData >> DEST_DOMAIN_MASK) >>
             TO_MASK_LENGTH);
 
         _xTransfer(
             registry.addresses(toAddressID),
-            domains[domainID],”
+            domains[domainID],
             tokenAddress,
             amount,
             slippageAndFee & SLIPPAGE_MASK,
@@ -119,19 +123,19 @@ contract ConnextL2Bridge is BridgeBase {
         owner = _owner;
     }
 
-    function addDomain(uint32[] calldata _domainIDs) external onlyOwner {
-        for (uint64 index = 0; index < _domainIDs.length; index++) {
+    function addDomains(uint32[] calldata _domainIDs) external onlyOwner {
+        for (uint32 index = 0; index < _domainIDs.length; index++) {
             domains[domainCount] = _domainIDs[index];
             domainCount = domainCount + 1;
         }
     }
 
-    function updateDomain(
-        uint64[] calldata _index,
+    function updateDomains(
+        uint32[] calldata _index,
         uint32[] calldata _newDomains
     ) external onlyOwner {
-        require(_index.length == _newDomains.length, "inconisten values");
-        for (uint64 index = 0; index < _newDomains.length; index++) {
+        require(_index.length == _newDomains.length, "inconsistent values");
+        for (uint index = 0; index < _newDomains.length; index++) {
             domains[_index[index]] = _newDomains[index];
         }
     }
