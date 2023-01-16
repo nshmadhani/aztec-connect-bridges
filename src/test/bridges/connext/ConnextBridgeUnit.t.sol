@@ -10,6 +10,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ConnextBridge} from "../../../bridges/connext/ConnextBridge.sol";
 import {AddressRegistry} from "../../../bridges/registry/AddressRegistry.sol";
 import {ErrorLib} from "../../../bridges/base/ErrorLib.sol";
+
 import "forge-std/console2.sol";
 
 
@@ -85,12 +86,12 @@ contract ConnextBridgeTest is BridgeTestBase {
         [*] owner changes
 
         --addDomain--
-        [] batch add of new domains
+        [*] batch add of new domains
         [] test inconsistent indexes
 
         --updateDomain--
-        [] batch update 
-        [] test inconsistent indexes
+        [*] batch update 
+        [*] test inconsistent indexes
      */
 
     
@@ -106,32 +107,47 @@ contract ConnextBridgeTest is BridgeTestBase {
         assertEq(bridge.owner(), OWNER);
     }
 
-    function testAddDomains(uint32  domain0, uint32 domain1) public  {
+    function testAddDomains(uint32  _domain0, uint32 _domain1) public  {
         uint32[] memory domains = new uint32[](2);
-        domains[0] = domain0;
-        domains[1] = domain1; 
+        domains[0] = _domain0;
+        domains[1] = _domain1; 
         bridge.addDomains(domains);
-        assertEq(bridge.domains(0), domain0);
-        assertEq(bridge.domains(1), domain1);
-        console2.log(domain0);
+        assertEq(bridge.domains(0), _domain0);
+        assertEq(bridge.domains(1), _domain1);
+        assertEq(bridge.domainCount(), 2);
     }
 
-    function testUpdateDomains() public  {
-        console2.log(bridge.domains(0));
+    function testInvalidUpdateDomains() public  {
         uint32[] memory index = new uint32[](2);
         uint32[] memory domains = new uint32[](2);
 
         index[0] = 0; domains[0] = GOERLI_ID;
         index[1] = 1; domains[1] = MUMBAI_ID;
-        
+
+        vm.expectRevert(ConnextBridge.InvalidDomainIndex.selector);        
         bridge.updateDomains(index,domains);
-        assertEq(bridge.domains(0), GOERLI_ID);
-        assertEq(bridge.domains(1), MUMBAI_ID);
 
     }
 
-    
+    function testAddAndUpdateDomainsFlow(uint32 _domain0, uint32 _domain1) public  {
+        uint32[] memory domains = new uint32[](2);
+        domains[0] = _domain0;
+        domains[1] = _domain1;
 
+        bridge.addDomains(domains);
+        assertEq(bridge.domains(0), _domain0);
+        assertEq(bridge.domains(1), _domain1);
+
+        uint32[] memory index = new uint32[](2);
+        
+        index[0] = 1; domains[0] = GOERLI_ID;
+        index[1] = 0; domains[1] = MUMBAI_ID;
+
+        bridge.updateDomains(index,domains);
+        assertEq(bridge.domains(1), GOERLI_ID);
+        assertEq(bridge.domains(0), MUMBAI_ID);
+
+    }
     
 
     function testInvalidCaller(address _callerAddress) public {

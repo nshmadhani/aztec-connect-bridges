@@ -9,6 +9,7 @@ import {BridgeBase} from "../base/BridgeBase.sol";
 import {IConnext} from "../../interfaces/connext/IConnext.sol";
 import {AddressRegistry} from "../registry/AddressRegistry.sol";
 
+
 /**
  * @title Connext L2 Bridge Contract
  * @author Nishay Madhani (@nshmadhani on Github, Telegram)
@@ -16,6 +17,10 @@ import {AddressRegistry} from "../registry/AddressRegistry.sol";
  * @dev  This Bridge is resposible for bridging funds from Aztec to L2 using Connext xCall.
  */
 contract ConnextBridge is BridgeBase {
+
+    error InvalidDomainIndex();
+
+
     IConnext public immutable connext;
 
     AddressRegistry public registry;
@@ -136,6 +141,9 @@ contract ConnextBridge is BridgeBase {
     ) external onlyOwner {
         require(_index.length == _newDomains.length, "inconsistent values");
         for (uint index = 0; index < _newDomains.length; index++) {
+            if(_index[index] >= domainCount) {
+                revert InvalidDomainIndex();
+            }
             domains[_index[index]] = _newDomains[index];
         }
     }
