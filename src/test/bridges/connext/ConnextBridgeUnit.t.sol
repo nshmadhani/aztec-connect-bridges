@@ -132,9 +132,9 @@ contract ConnextBridgeTest is BridgeTestBase {
         uint32[] memory domains = new uint32[](2);
 
         domains[0] = GOERLI_ID;
-        index[1] = 1; domains[1] = MUMBAI_ID;
+        index[0] = 1; domains[1] = MUMBAI_ID;
 
-        vm.expectRevert(ConnextBridge.InvalidArrayLength.selector);        
+        vm.expectRevert(ConnextBridge.InvalidConfiguration.selector);        
         bridge.updateDomains(index,domains);
     }
 
@@ -171,5 +171,48 @@ contract ConnextBridgeTest is BridgeTestBase {
         vm.expectRevert(ErrorLib.InvalidInputA.selector);
         bridge.convert(emptyAsset, emptyAsset, emptyAsset, emptyAsset, 0, 0, 0, address(0));
     }
+
+    function testInvalidDomainID() public {
+        uint32[] memory domains = new uint32[](2);
+        domains[0] = GOERLI_ID;
+        domains[1] = MUMBAI_ID;
+        bridge.addDomains(domains); // now the domains are at 0, 1 index
+        vm.expectRevert(ConnextBridge.InvalidDomainID.selector);
+        bridge.getDomainID(3);
+    }
+
+    function testGetDomainID() public {
+        uint32[] memory domains = new uint32[](2);
+        domains[0] = GOERLI_ID;
+        domains[1] = MUMBAI_ID;        
+        bridge.addDomains(domains); // now the domains are at 0, 1 index
+        assertEq(bridge.getDomainID(0), GOERLI_ID);
+        assertEq(bridge.getDomainID(1), MUMBAI_ID);
+    }
+
+
+    function testGetDestinationAddress(address _domain0, address _domain1) public {
+        addressRegistry.registerAddress(_domain0);
+        addressRegistry.registerAddress(_domain1);
+        
+        assertEq(bridge.getDestinationAddress(16), _domain0);
+        assertEq(bridge.getDestinationAddress(32), _domain1);
+    }
+
+    function testGetSlippage(uint64 _slippage) public {
+        vm.assume(_slippage >= 0 && _slippage <= 1024);       
+        uint64 auxData =  _slippage << (bridge.TO_MASK_LENGTH() + bridge.DEST_DOMAIN_LENGTH());
+        assertEq(bridge.getSlippage(auxData), _slippage);
+    }
+
+    function testGetRelayerFee(uint64 _relayerFee) public {
+        vm.assume(_relayerFee >= 0 && _relayerFee <= (2 ** 20));       
+        uint64 auxData =  _relayerFee << (bridge.TO_MASK_LENGTH() + bridge.DEST_DOMAIN_LENGTH() + bridge.SLIPPAGE_LENGTH());
+        assertEq(bridge.getRelayerFee(auxData), _relayerFee);
+    }
+
+
+
+
 
 }

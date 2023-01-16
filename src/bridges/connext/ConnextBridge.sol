@@ -17,8 +17,8 @@ import {AddressRegistry} from "../registry/AddressRegistry.sol";
  */
 contract ConnextBridge is BridgeBase {
     error InvalidDomainIndex();
-    error AllowanceMissing();
-    error InvalidArrayLength();
+    error InvalidConfiguration();
+    error InvalidDomainID();
 
     IConnext public immutable CONNEXT;
 
@@ -65,7 +65,7 @@ contract ConnextBridge is BridgeBase {
         address _registry,
         address _onwer
     ) BridgeBase(_rollupProcessor) {
-        connext = IConnext(_connext);
+        CONNEXT = IConnext(_connext);
         registry = AddressRegistry(_registry);
         owner = _onwer;
     }
@@ -107,18 +107,27 @@ contract ConnextBridge is BridgeBase {
         address tokenAddress = _inputAssetA.erc20Address;
         uint256 amount = _totalInputValue;
 
-        uint32 domainID = uint32(_auxData & DEST_DOMAIN_MASK);
-        uint64 toAddressID = (_auxData >> DEST_DOMAIN_MASK) & TO_MASK;
-        uint64 slippageAndFee = ((_auxData >> DEST_DOMAIN_MASK) >>
+        uint32 domainIndex = uint32(_auxData & DEST_DOMAIN_MASK);
+
+        if(domainIndex >= domainCount) {
+            revert InvalidDomainID();
+        }
+
+        uint64 toAddressID = (_auxData >> DEST_DOMAIN_LENGTH) & TO_MASK;
+
+        uint64 slippageAndFee = ((_auxData >> DEST_DOMAIN_LENGTH) >>
             TO_MASK_LENGTH);
+
+        uint64 slippage = slippageAndFee & SLIPPAGE_MASK;
+        uint64 relayerFee = (slippageAndFee >> SLIPPAGE_LENGTH) & RELAYED_FEE_MASK;
 
         _xTransfer(
             registry.addresses(toAddressID),
-            domains[domainID],
+            domains[domainIndex],
             tokenAddress,
             amount,
-            slippageAndFee & SLIPPAGE_MASK,
-            (slippageAndFee >> SLIPPAGE_LENGTH) & RELAYED_FEE_MASK
+            slippage,
+            relayerFee
         );
     }
 
@@ -153,7 +162,7 @@ contract ConnextBridge is BridgeBase {
         uint32[] calldata _newDomains
     ) external onlyOwner {
         if(_index.length != _newDomains.length) {
-            revert InvalidArrayLength();
+            revert InvalidConfiguration();
         }
         for (uint256 index = 0; index < _newDomains.length; index++) {
             if (_index[index] >= domainCount) {
@@ -165,12 +174,12 @@ contract ConnextBridge is BridgeBase {
 
     /**
      * @notice Transfers funds from one chain to another.
-     * @param recipient The destination address (e.g. a wallet).
-     * @param destinationDomain The destination domain ID.
-     * @param tokenAddress Address of the token to transfer.
-     * @param amount The amount to transfer.
-     * @param slippage The maximum amount of slippage the user will accept in BPS.
-     * @param relayerFee The fee offered to relayers. On testnet, this can be 0.
+     * @param _recipient The destination address (e.g. a wallet).
+     * @param _destinationDomain The destination domain ID.
+     * @param _tokenAddress Address of the token to transfer.
+     * @param _amount The amount to transfer.
+     * @param _slippage The maximum amount of slippage the user will accept in BPS.
+     * @param _relayerFee The fee offered to relayers. On testnet, this can be 0.
      */
     function _xTransfer(
         address _recipient,
@@ -180,14 +189,7 @@ contract ConnextBridge is BridgeBase {
         uint256 _slippage,
         uint256 _relayerFee
     ) internal {
-        IERC20 token = IERC20(_tokenAddress);
-        if(token.allowance(msg.sender, address(this)) < _amount) {
-            revert AllowanceMissing();
-        }
-        // User sends funds to this contract
-        token.transferFrom(msg.sender, address(this), _amount);
-        // This contract approves transfer to Connext
-        token.approve(address(CONNEXT), _amount);
+        IERC20(_tokenAddress).approve(address(CONNEXT), _amount);
         CONNEXT.xcall{value: _relayerFee}(
             _destinationDomain, // _destination: Domain ID of the destination chain
             _recipient, // _to: address receiving the funds on the destination
@@ -198,4 +200,57 @@ contract ConnextBridge is BridgeBase {
             "" // _callData: empty because we're only sending funds
         );
     }
+
+     /**
+     * @notice Get DomainID from auxillary data 
+     * @param _auxData auxData param passed to convert() function
+     * @dev appplied bit masking to retrieve first x bits to get index.
+     *      The maps the index to domains map
+    */
+    function getDomainID(uint64 _auxData) public view returns (uint32 domainID) {
+        uint32 domainIndex = uint32(_auxData & DEST_DOMAIN_MASK);
+
+        if(domainIndex >= domainCount) {
+            revert InvalidDomainID();
+        }
+        domainID = domains[domainIndex];
+    }
+
+    /**
+     * @notice Get destination address from auxillary data 
+     * @param _auxData auxData param passed to convert() function
+     * @dev applies bit shifting to first remove bits used by domainID,
+     *      appplied bit masking to retrieve first x bits to get index.
+     *      The maps the index to AddressRegistry
+    */
+    function getDestinationAddress(uint64 _auxData) public view returns (address destination) {
+        _auxData = _auxData >> DEST_DOMAIN_LENGTH;
+        uint64 toAddressID = (_auxData & TO_MASK);
+        destination = registry.addresses(toAddressID);
+    }
+
+    /**
+     * @notice Get slippage from auxData
+     * @param _auxData auxData param passed to convert() function
+     * @dev applies bit shifting to first remove bits used by domainID, toAddress
+     *      appplied bit masking to retrieve first x bits to get index.
+     *      The maps the index to AddressRegistry
+    */
+    function getSlippage(uint64 _auxData) public view returns (uint64 slippage) {
+        _auxData = _auxData >> ( DEST_DOMAIN_LENGTH + TO_MASK_LENGTH);
+        slippage = (_auxData & SLIPPAGE_MASK);
+    }
+
+    /**
+     * @notice Get relayer fee from auxData
+     * @param _auxData auxData param passed to convert() function
+     * @dev applies bit shifting to first remove bits used by domainID, toAddress, slippage
+     *      appplied bit masking to retrieve first x bits to get index.
+     *      The maps the index to AddressRegistry
+    */
+    function getRelayerFee(uint64 _auxData) public view returns (uint64 relayerFee) {
+        _auxData = _auxData >> ( DEST_DOMAIN_LENGTH + TO_MASK_LENGTH + SLIPPAGE_LENGTH);
+        relayerFee = (_auxData & RELAYED_FEE_MASK);
+    }
+
 }
