@@ -86,7 +86,6 @@ contract ConnextBridgeTest is BridgeTestBase {
 
         --addDomain--
         [*] batch add of new domains
-        [] test inconsistent indexes
 
         --updateDomain--
         [*] batch update 
@@ -159,19 +158,6 @@ contract ConnextBridgeTest is BridgeTestBase {
     }
     
 
-    function testInvalidCaller(address _callerAddress) public {
-        vm.assume(_callerAddress != rollupProcessor);
-        // Use HEVM cheatcode to call from a different address than is address(this)
-        vm.prank(_callerAddress);
-        vm.expectRevert(ErrorLib.InvalidCaller.selector);
-        bridge.convert(emptyAsset, emptyAsset, emptyAsset, emptyAsset, 0, 0, 0, address(0));
-    }
-
-    function testInvalidInputAssetType() public {
-        vm.expectRevert(ErrorLib.InvalidInputA.selector);
-        bridge.convert(emptyAsset, emptyAsset, emptyAsset, emptyAsset, 0, 0, 0, address(0));
-    }
-
     function testInvalidDomainID() public {
         uint32[] memory domains = new uint32[](2);
         domains[0] = GOERLI_ID;
@@ -210,6 +196,65 @@ contract ConnextBridgeTest is BridgeTestBase {
         uint64 auxData =  _relayerFee << (bridge.TO_MASK_LENGTH() + bridge.DEST_DOMAIN_LENGTH() + bridge.SLIPPAGE_LENGTH());
         assertEq(bridge.getRelayerFee(auxData), _relayerFee);
     }
+
+    function testInvalidCaller(address _callerAddress) public {
+        vm.assume(_callerAddress != rollupProcessor);
+        // Use HEVM cheatcode to call from a different address than is address(this)
+        vm.prank(_callerAddress);
+        vm.expectRevert(ErrorLib.InvalidCaller.selector);
+        bridge.convert(emptyAsset, emptyAsset, emptyAsset, emptyAsset, 0, 0, 0, address(0));
+    }
+
+    function testInvalidInputAssetType() public {
+        vm.expectRevert(ErrorLib.InvalidInputA.selector);
+        bridge.convert(emptyAsset, emptyAsset, emptyAsset, emptyAsset, 0, 0, 0, address(0));
+    }
+
+    function testFullFlowUnit(address _destination) public {
+        vm.assume(address(this) != _destination);
+        addressRegistry.registerAddress(_destination);
+    }
+
+    function testFullFlowUnit(address _destination, uint256 _depositAmount) public {
+        vm.warp(block.timestamp + 1 days);
+
+        vm.assume(address(this) != _destination);
+        addressRegistry.registerAddress(_destination);
+
+        uint32[] memory domains = new uint32[](2);
+        domains[0] = GOERLI_ID;
+        domains[1] = MUMBAI_ID;        
+        bridge.addDomains(domains); // now the domains are at 0, 1 index
+
+        // Define input and output assets
+        AztecTypes.AztecAsset memory inputAssetA =
+            AztecTypes.AztecAsset({id: 1, erc20Address: DAI, assetType: AztecTypes.AztecAssetType.ERC20});
+
+
+        // Rollup processor transfers ERC20 tokens to the bridge before calling convert. Since we are calling
+        // bridge.convert(...) function directly we have to transfer the funds in the test on our own. In this case
+        // we'll solve it by directly minting the _depositAmount of Dai to the bridge.
+        deal(DAI, address(bridge), _depositAmount);
+
+        // Store dai balance before interaction to be able to verify the balance after interaction is correct
+        uint256 daiBalanceBefore = IERC20(DAI).balanceOf(rollupProcessor);
+
+        uint64 auxData = 4950486679553;
+
+        (uint256 outputValueA, uint256 outputValueB, bool isAsync) = bridge.convert(
+            inputAssetA, // _inputAssetA - definition of an input asset
+            emptyAsset, // _inputAssetB - not used so can be left empty
+            emptyAsset, // _outputAssetA - not used so can be lefr emoty
+            emptyAsset, // _outputAssetB - not used so can be left empty
+            _depositAmount, // _totalInputValue - an amount of input asset A sent to the bridge
+            0, // _interactionNonce
+            auxData, // _auxData - not used in the example bridge
+            BENEFICIARY // _rollupBeneficiary - address, the subsidy will be sent to
+        );
+
+    }
+    //1001000000010100000000000000000000000000001
+
 
 
 

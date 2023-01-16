@@ -107,27 +107,13 @@ contract ConnextBridge is BridgeBase {
         address tokenAddress = _inputAssetA.erc20Address;
         uint256 amount = _totalInputValue;
 
-        uint32 domainIndex = uint32(_auxData & DEST_DOMAIN_MASK);
-
-        if(domainIndex >= domainCount) {
-            revert InvalidDomainID();
-        }
-
-        uint64 toAddressID = (_auxData >> DEST_DOMAIN_LENGTH) & TO_MASK;
-
-        uint64 slippageAndFee = ((_auxData >> DEST_DOMAIN_LENGTH) >>
-            TO_MASK_LENGTH);
-
-        uint64 slippage = slippageAndFee & SLIPPAGE_MASK;
-        uint64 relayerFee = (slippageAndFee >> SLIPPAGE_LENGTH) & RELAYED_FEE_MASK;
-
         _xTransfer(
-            registry.addresses(toAddressID),
-            domains[domainIndex],
+            getDestinationAddress(_auxData),
+            getDomainID(_auxData),
             tokenAddress,
             amount,
-            slippage,
-            relayerFee
+            getSlippage(_auxData),
+            getRelayerFee(_auxData)
         );
     }
 
