@@ -11,7 +11,6 @@ import {ConnextBridge} from "../../../bridges/connext/ConnextBridge.sol";
 import {AddressRegistry} from "../../../bridges/registry/AddressRegistry.sol";
 import {ErrorLib} from "../../../bridges/base/ErrorLib.sol";
 
-import "forge-std/console2.sol";
 
 
 // @notice The purpose of this test is to directly test convert functionality of the bridge.
@@ -126,7 +125,17 @@ contract ConnextBridgeTest is BridgeTestBase {
 
         vm.expectRevert(ConnextBridge.InvalidDomainIndex.selector);        
         bridge.updateDomains(index,domains);
+    }
 
+    function testInvalidLengthUpdateDomains() public  {
+        uint32[] memory index = new uint32[](1);
+        uint32[] memory domains = new uint32[](2);
+
+        domains[0] = GOERLI_ID;
+        index[1] = 1; domains[1] = MUMBAI_ID;
+
+        vm.expectRevert(ConnextBridge.InvalidArrayLength.selector);        
+        bridge.updateDomains(index,domains);
     }
 
     function testAddAndUpdateDomainsFlow(uint32 _domain0, uint32 _domain1) public  {

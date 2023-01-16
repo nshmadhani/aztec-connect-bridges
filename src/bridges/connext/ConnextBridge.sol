@@ -9,7 +9,6 @@ import {BridgeBase} from "../base/BridgeBase.sol";
 import {IConnext} from "../../interfaces/connext/IConnext.sol";
 import {AddressRegistry} from "../registry/AddressRegistry.sol";
 
-
 /**
  * @title Connext L2 Bridge Contract
  * @author Nishay Madhani (@nshmadhani on Github, Telegram)
@@ -17,11 +16,11 @@ import {AddressRegistry} from "../registry/AddressRegistry.sol";
  * @dev  This Bridge is resposible for bridging funds from Aztec to L2 using Connext xCall.
  */
 contract ConnextBridge is BridgeBase {
-
     error InvalidDomainIndex();
+    error AllowanceMissing();
+    error InvalidArrayLength();
 
-
-    IConnext public immutable connext;
+    IConnext public immutable CONNEXT;
 
     AddressRegistry public registry;
 
@@ -101,8 +100,7 @@ contract ConnextBridge is BridgeBase {
             bool
         )
     {
-
-        if(_inputAssetA.assetType != AztecTypes.AztecAssetType.ERC20) {
+        if (_inputAssetA.assetType != AztecTypes.AztecAssetType.ERC20) {
             revert ErrorLib.InvalidInputA();
         }
 
@@ -124,10 +122,19 @@ contract ConnextBridge is BridgeBase {
         );
     }
 
+    /**
+     * @notice Transfers ownership to a new owner
+     * @param _owner new owner of the contract
+     */
     function transferOwnership(address _owner) external onlyOwner {
         owner = _owner;
     }
 
+    /**
+     * @notice Add a new domain to the mapping
+     * @param _domainIDs new domains to be added to the end of the mapping
+     * @dev elements are included based on the domainCount variablle
+     */
     function addDomains(uint32[] calldata _domainIDs) external onlyOwner {
         for (uint32 index = 0; index < _domainIDs.length; index++) {
             domains[domainCount] = _domainIDs[index];
@@ -135,13 +142,21 @@ contract ConnextBridge is BridgeBase {
         }
     }
 
+    /**
+     * @notice Update domainIDs for each chain according to connext
+     * @param _index index where domain is located in domains map
+     * @param _newDomains new domainIDs
+     * @dev 0th element in _index is key for 0th elemen in _newDomains for domains map
+     */
     function updateDomains(
         uint32[] calldata _index,
         uint32[] calldata _newDomains
     ) external onlyOwner {
-        require(_index.length == _newDomains.length, "inconsistent values");
-        for (uint index = 0; index < _newDomains.length; index++) {
-            if(_index[index] >= domainCount) {
+        if(_index.length != _newDomains.length) {
+            revert InvalidArrayLength();
+        }
+        for (uint256 index = 0; index < _newDomains.length; index++) {
+            if (_index[index] >= domainCount) {
                 revert InvalidDomainIndex();
             }
             domains[_index[index]] = _newDomains[index];
@@ -158,29 +173,28 @@ contract ConnextBridge is BridgeBase {
      * @param relayerFee The fee offered to relayers. On testnet, this can be 0.
      */
     function _xTransfer(
-        address recipient,
-        uint32 destinationDomain,
-        address tokenAddress,
-        uint256 amount,
-        uint256 slippage,
-        uint256 relayerFee
+        address _recipient,
+        uint32 _destinationDomain,
+        address _tokenAddress,
+        uint256 _amount,
+        uint256 _slippage,
+        uint256 _relayerFee
     ) internal {
-        IERC20 token = IERC20(tokenAddress);
-        require(
-            token.allowance(msg.sender, address(this)) >= amount,
-            "User must approve amount"
-        );
+        IERC20 token = IERC20(_tokenAddress);
+        if(token.allowance(msg.sender, address(this)) < _amount) {
+            revert AllowanceMissing();
+        }
         // User sends funds to this contract
-        token.transferFrom(msg.sender, address(this), amount);
+        token.transferFrom(msg.sender, address(this), _amount);
         // This contract approves transfer to Connext
-        token.approve(address(connext), amount);
-        connext.xcall{value: relayerFee}(
-            destinationDomain, // _destination: Domain ID of the destination chain
-            recipient, // _to: address receiving the funds on the destination
-            tokenAddress, // _asset: address of the token contract
+        token.approve(address(CONNEXT), _amount);
+        CONNEXT.xcall{value: _relayerFee}(
+            _destinationDomain, // _destination: Domain ID of the destination chain
+            _recipient, // _to: address receiving the funds on the destination
+            _tokenAddress, // _asset: address of the token contract
             msg.sender, // _delegate: address that can revert or forceLocal on destination
-            amount, // _amount: amount of tokens to transfer
-            slippage, // _slippage: the maximum amount of slippage the user will accept in BPS
+            _amount, // _amount: amount of tokens to transfer
+            _slippage, // _slippage: the maximum amount of slippage the user will accept in BPS
             "" // _callData: empty because we're only sending funds
         );
     }
