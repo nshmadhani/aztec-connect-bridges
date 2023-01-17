@@ -33,6 +33,11 @@ contract ConnextBridgeTest is BridgeTestBase {
     // The reference to the example bridge
     ConnextBridge private bridge;
 
+
+    event XCalled();
+
+
+
     // @dev This method exists on RollupProcessor.sol. It's defined here in order to be able to receive ETH like a real
     //      rollup processor would.
     function receiveEthFromBridge(uint256 _interactionNonce) external payable {}
@@ -187,13 +192,13 @@ contract ConnextBridgeTest is BridgeTestBase {
     }
 
     function testGetSlippage(uint64 _slippage) public {
-        vm.assume(_slippage < 1024);       
+        vm.assume(_slippage < 2 ** bridge.SLIPPAGE_LENGTH());       
         uint64 auxData =  _slippage << (bridge.TO_MASK_LENGTH() + bridge.DEST_DOMAIN_LENGTH());
         assertEq(bridge.getSlippage(auxData), _slippage);
     }
 
     function testGetRelayerFee(uint64 _relayerFee) public {
-        vm.assume(_relayerFee >= 0 && _relayerFee <= (2 ** 20));       
+        vm.assume(_relayerFee < (2 ** bridge.RELAYED_FEE_LENGTH()));       
         uint64 auxData =  _relayerFee << (bridge.TO_MASK_LENGTH() + bridge.DEST_DOMAIN_LENGTH() + bridge.SLIPPAGE_LENGTH());
         assertEq(bridge.getRelayerFee(auxData), _relayerFee);
     }
@@ -219,6 +224,7 @@ contract ConnextBridgeTest is BridgeTestBase {
     function testFullFlowUnit(address _destination, uint256 _depositAmount) public {
         vm.assume(address(this) != _destination && _destination != address(0));
         vm.assume(_depositAmount != 0 && _depositAmount < 10 * (10 ** 6));
+
 
         addressRegistry.registerAddress(_destination);
 
