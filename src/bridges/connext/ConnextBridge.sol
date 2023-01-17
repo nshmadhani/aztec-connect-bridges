@@ -222,7 +222,7 @@ contract ConnextBridge is BridgeBase {
      *      appplied bit masking to retrieve first x bits to get index.
      *      The maps the index to AddressRegistry
     */
-    function getSlippage(uint64 _auxData) public view returns (uint64 slippage) {
+    function getSlippage(uint64 _auxData) public pure returns (uint64 slippage) {
         _auxData = _auxData >> ( DEST_DOMAIN_LENGTH + TO_MASK_LENGTH);
         slippage = (_auxData & SLIPPAGE_MASK);
     }
@@ -234,7 +234,7 @@ contract ConnextBridge is BridgeBase {
      *      appplied bit masking to retrieve first x bits to get index.
      *      The maps the index to AddressRegistry
     */
-    function getRelayerFee(uint64 _auxData) public view returns (uint64 relayerFee) {
+    function getRelayerFee(uint64 _auxData) public pure returns (uint64 relayerFee) {
         _auxData = _auxData >> ( DEST_DOMAIN_LENGTH + TO_MASK_LENGTH + SLIPPAGE_LENGTH);
         relayerFee = (_auxData & RELAYED_FEE_MASK);
     }

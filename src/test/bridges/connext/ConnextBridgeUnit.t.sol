@@ -16,13 +16,13 @@ import {ErrorLib} from "../../../bridges/base/ErrorLib.sol";
 // @notice The purpose of this test is to directly test convert functionality of the bridge.
 contract ConnextBridgeTest is BridgeTestBase {
     
-    address private constant DAI = 0x6B175474E89094C44Da98b954EedeAC495271d0F;
+    address private constant USDC = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
     address private constant CONNEXT = 0x8898B472C54c31894e3B9bb83cEA802a5d0e63C6; //mainnet
     address private constant BENEFICIARY = address(11);
     address private constant OWNER = address(12);
 
-    uint32 private constant GOERLI_ID = 1735353714;
-    uint32 private constant MUMBAI_ID = 9991;
+    uint32 private constant MAINNET_ID = 6648936;
+    uint32 private constant POLYGON_ID = 1886350457;
     
 
     address private rollupProcessor;
@@ -50,11 +50,12 @@ contract ConnextBridgeTest is BridgeTestBase {
         vm.deal(address(bridge), 0);
         vm.deal(BENEFICIARY, 0);
         vm.deal(OWNER, 0);
-
         vm.label(address(bridge), "Connext Bridge");
+        vm.label(address(USDC), "USDC");
+        
 
         // // Subsidize the bridge when used with Dai and register a beneficiary
-        // AztecTypes.AztecAsset memory daiAsset = ROLLUP_ENCODER.getRealAztecAsset(DAI);
+        // AztecTypes.AztecAsset memory daiAsset = ROLLUP_ENCODER.getRealAztecAsset(USDC);
         // uint256 criteria = bridge.computeCriteria(daiAsset, emptyAsset, daiAsset, emptyAsset, 0);
         // uint32 gasPerMinute = 200;
         // SUBSIDY.subsidize{value: 1 ether}(address(bridge), criteria, gasPerMinute);
@@ -119,8 +120,8 @@ contract ConnextBridgeTest is BridgeTestBase {
         uint32[] memory index = new uint32[](2);
         uint32[] memory domains = new uint32[](2);
 
-        index[0] = 0; domains[0] = GOERLI_ID;
-        index[1] = 1; domains[1] = MUMBAI_ID;
+        index[0] = 0; domains[0] = MAINNET_ID;
+        index[1] = 1; domains[1] = POLYGON_ID;
 
         vm.expectRevert(ConnextBridge.InvalidDomainIndex.selector);        
         bridge.updateDomains(index,domains);
@@ -130,8 +131,8 @@ contract ConnextBridgeTest is BridgeTestBase {
         uint32[] memory index = new uint32[](1);
         uint32[] memory domains = new uint32[](2);
 
-        domains[0] = GOERLI_ID;
-        index[0] = 1; domains[1] = MUMBAI_ID;
+        domains[0] = MAINNET_ID;
+        index[0] = 1; domains[1] = POLYGON_ID;
 
         vm.expectRevert(ConnextBridge.InvalidConfiguration.selector);        
         bridge.updateDomains(index,domains);
@@ -148,20 +149,20 @@ contract ConnextBridgeTest is BridgeTestBase {
 
         uint32[] memory index = new uint32[](2);
         
-        index[0] = 1; domains[0] = GOERLI_ID;
-        index[1] = 0; domains[1] = MUMBAI_ID;
+        index[0] = 1; domains[0] = MAINNET_ID;
+        index[1] = 0; domains[1] = POLYGON_ID;
 
         bridge.updateDomains(index,domains);
-        assertEq(bridge.domains(1), GOERLI_ID);
-        assertEq(bridge.domains(0), MUMBAI_ID);
+        assertEq(bridge.domains(1), MAINNET_ID);
+        assertEq(bridge.domains(0), POLYGON_ID);
 
     }
     
 
     function testInvalidDomainID() public {
         uint32[] memory domains = new uint32[](2);
-        domains[0] = GOERLI_ID;
-        domains[1] = MUMBAI_ID;
+        domains[0] = MAINNET_ID;
+        domains[1] = POLYGON_ID;
         bridge.addDomains(domains); // now the domains are at 0, 1 index
         vm.expectRevert(ConnextBridge.InvalidDomainID.selector);
         bridge.getDomainID(3);
@@ -169,11 +170,11 @@ contract ConnextBridgeTest is BridgeTestBase {
 
     function testGetDomainID() public {
         uint32[] memory domains = new uint32[](2);
-        domains[0] = GOERLI_ID;
-        domains[1] = MUMBAI_ID;        
+        domains[0] = MAINNET_ID;
+        domains[1] = POLYGON_ID;        
         bridge.addDomains(domains); // now the domains are at 0, 1 index
-        assertEq(bridge.getDomainID(0), GOERLI_ID);
-        assertEq(bridge.getDomainID(1), MUMBAI_ID);
+        assertEq(bridge.getDomainID(0), MAINNET_ID);
+        assertEq(bridge.getDomainID(1), POLYGON_ID);
     }
 
 
@@ -186,7 +187,7 @@ contract ConnextBridgeTest is BridgeTestBase {
     }
 
     function testGetSlippage(uint64 _slippage) public {
-        vm.assume(_slippage >= 0 && _slippage <= 1024);       
+        vm.assume(_slippage < 1024);       
         uint64 auxData =  _slippage << (bridge.TO_MASK_LENGTH() + bridge.DEST_DOMAIN_LENGTH());
         assertEq(bridge.getSlippage(auxData), _slippage);
     }
@@ -216,39 +217,39 @@ contract ConnextBridgeTest is BridgeTestBase {
     }
 
     function testFullFlowUnit(address _destination, uint256 _depositAmount) public {
-        vm.warp(block.timestamp + 1 days);
+        vm.assume(address(this) != _destination && _destination != address(0));
+        vm.assume(_depositAmount != 0 && _depositAmount < 10 * (10 ** 6));
 
-        vm.assume(address(this) != _destination);
         addressRegistry.registerAddress(_destination);
 
         uint32[] memory domains = new uint32[](2);
-        domains[0] = GOERLI_ID;
-        domains[1] = MUMBAI_ID;        
+        domains[0] = MAINNET_ID;
+        domains[1] = POLYGON_ID;        
         bridge.addDomains(domains); // now the domains are at 0, 1 index
 
         // Define input and output assets
         AztecTypes.AztecAsset memory inputAssetA =
-            AztecTypes.AztecAsset({id: 1, erc20Address: DAI, assetType: AztecTypes.AztecAssetType.ERC20});
+            AztecTypes.AztecAsset({id: 1, erc20Address: USDC, assetType: AztecTypes.AztecAssetType.ERC20});
 
 
         // Rollup processor transfers ERC20 tokens to the bridge before calling convert. Since we are calling
         // bridge.convert(...) function directly we have to transfer the funds in the test on our own. In this case
         // we'll solve it by directly minting the _depositAmount of Dai to the bridge.
-        deal(DAI, address(bridge), _depositAmount);
+        deal(USDC, address(bridge), _depositAmount);
 
         // Store dai balance before interaction to be able to verify the balance after interaction is correct
-        uint256 daiBalanceBefore = IERC20(DAI).balanceOf(rollupProcessor);
+        
 
         uint64 auxData = 4950486679553;
 
-        (uint256 outputValueA, uint256 outputValueB, bool isAsync) = bridge.convert(
+        bridge.convert{value: 9}(
             inputAssetA, // _inputAssetA - definition of an input asset
             emptyAsset, // _inputAssetB - not used so can be left empty
             emptyAsset, // _outputAssetA - not used so can be lefr emoty
             emptyAsset, // _outputAssetB - not used so can be left empty
             _depositAmount, // _totalInputValue - an amount of input asset A sent to the bridge
             0, // _interactionNonce
-            auxData, // _auxData - not used in the example bridge
+            auxData, 
             BENEFICIARY // _rollupBeneficiary - address, the subsidy will be sent to
         );
 
