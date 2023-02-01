@@ -46,7 +46,7 @@ contract ConnextBridgeE2ETest is BridgeTestBase {
 
 
         // Deploy a new example bridge
-        bridge = new ConnextBridge(address(ROLLUP_PROCESSOR), CONNEXT, address(addressRegistry), MULTI_SIG);
+        bridge = new ConnextBridge(address(ROLLUP_PROCESSOR), CONNEXT, 0xE592427A0AEce92De3Edee1F18E0157C05861564,address(addressRegistry), MULTI_SIG);
 
         // Use the label cheatcode to mark the address with "Example Bridge" in the traces
         vm.label(address(bridge), "ConnextBridge");
@@ -109,8 +109,7 @@ contract ConnextBridgeE2ETest is BridgeTestBase {
 
         // Execute the rollup with the bridge interaction. Ensure that event as seen above is emitted.
         (uint256 outputValueA, uint256 outputValueB, bool isAsync) = ROLLUP_ENCODER.processRollupAndGetBridgeResult();
-        
-        // Note: Unlike in unit tests there is no need to manually transfer the tokens - RollupProcessor does this
+
 
     }
 }

@@ -4,9 +4,12 @@ pragma solidity >=0.8.4;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {AztecTypes} from "rollup-encoder/libraries/AztecTypes.sol";
+
 import {ErrorLib} from "../base/ErrorLib.sol";
 import {BridgeBase} from "../base/BridgeBase.sol";
 import {IConnext} from "../../interfaces/connext/IConnext.sol";
+import {ISwapRouter} from "../../interfaces/uniswapv3/ISwapRouter.sol";
+import {IWETH} from "../../interfaces/IWETH.sol";
 import {AddressRegistry} from "../registry/AddressRegistry.sol";
 
 /**
@@ -20,33 +23,41 @@ contract ConnextBridge is BridgeBase {
     error InvalidConfiguration();
     error InvalidDomainID();
 
+    address public constant WETH = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
     IConnext public immutable CONNEXT;
+    ISwapRouter public immutable UNISWAP_ROUTER;
 
     AddressRegistry public registry;
+    
+    address public owner;
+
 
     uint64 public constant DEST_DOMAIN_LENGTH = 5;
     uint64 public constant TO_MASK_LENGTH = 24;
     uint64 public constant SLIPPAGE_LENGTH = 10;
-    uint64 public constant RELAYED_FEE_LENGTH = 20;
+    uint64 public constant RELAYED_FEE_LENGTH = 14;
 
-    /// @dev The following masks are used to decode slippage, destination domain, relayerfee multiplier and destination address from 1 uint64
-    // Binary number 11111 (last 5 bits)
+    /// @dev The following masks are used to decode slippage(bps), destination domain, 
+    ///       relayerfee bps and destination address from 1 uint64
+
+    // Binary number 11111 (last 5 bits) from LSB
     uint64 public constant DEST_DOMAIN_MASK = 0x1F;
 
-    // Binary number 111111111111111111111111 (last 24 bits)
+    // Binary number 111111111111111111111111 (next 24 bits)
     uint64 public constant TO_MASK = 0xFFFFFF;
 
-    // Binary number 1111111111 (last 10 bits)
+    // Binary number 1111111111 (next 10 bits)
     uint64 public constant SLIPPAGE_MASK = 0x3FF;
 
-    // Binary number 11111111111111111111 (last 20 bits)
-    uint64 public constant RELAYED_FEE_MASK = 0xFFFFF;
+    // Binary number 11111111111111 (next 14 bits)
+    uint64 public constant RELAYED_FEE_MASK = 0x3FFF;
 
     uint32 public domainCount;
-
     mapping(uint32 => uint32) public domains;
 
-    address public owner;
+    uint24 public constant poolFee = 3000;
+
+
 
     modifier onlyOwner() {
         if (msg.sender != owner) {
@@ -54,7 +65,6 @@ contract ConnextBridge is BridgeBase {
         }
         _;
     }
-
     /**
      * @notice Set address of rollup processor
      * @param _rollupProcessor Address of rollup processor
@@ -62,15 +72,17 @@ contract ConnextBridge is BridgeBase {
     constructor(
         address _rollupProcessor,
         address _connext,
+        address _swapRouter,
         address _registry,
         address _onwer
     ) BridgeBase(_rollupProcessor) {
         CONNEXT = IConnext(_connext);
         registry = AddressRegistry(_registry);
+        UNISWAP_ROUTER = ISwapRouter(_swapRouter);
         owner = _onwer;
     }
 
-    //* can we do a recpt as output for bridging? */
+    receive() external payable {}
 
     /**
      * @notice A function which returns an _totalInputValue amount of _inputAssetA
@@ -104,17 +116,24 @@ contract ConnextBridge is BridgeBase {
             revert ErrorLib.InvalidInputA();
         }
 
-        address tokenAddress = _inputAssetA.erc20Address;
-        uint256 amount = _totalInputValue;
+        uint256 relayerFeeAmountsIn = getRelayerFee(_auxData, _totalInputValue);
+        uint256 relayerFee = _swapForWETH(
+            _inputAssetA.erc20Address,
+            relayerFeeAmountsIn
+        );
+
+        IWETH(WETH).withdraw(relayerFee);
 
         _xTransfer(
             getDestinationAddress(_auxData),
             getDomainID(_auxData),
-            tokenAddress,
-            amount,
+            _inputAssetA.erc20Address,
+            _totalInputValue - relayerFeeAmountsIn,
             getSlippage(_auxData),
-            getRelayerFee(_auxData)
+            relayerFee
         );
+
+        return (0, 0, false);
     }
 
     /**
@@ -147,7 +166,7 @@ contract ConnextBridge is BridgeBase {
         uint32[] calldata _index,
         uint32[] calldata _newDomains
     ) external onlyOwner {
-        if(_index.length != _newDomains.length) {
+        if (_index.length != _newDomains.length) {
             revert InvalidConfiguration();
         }
         for (uint256 index = 0; index < _newDomains.length; index++) {
@@ -187,29 +206,61 @@ contract ConnextBridge is BridgeBase {
         );
     }
 
-     /**
-     * @notice Get DomainID from auxillary data 
+    function _swapForWETH(address _tokenAddress, uint256 _amountIn)
+        internal
+        returns (uint256 amountOut)
+    {
+        // msg.sender must approve this contract
+        // Approve the router to spend DAI.
+        IERC20(_tokenAddress).approve(address(UNISWAP_ROUTER), _amountIn);
+
+        ISwapRouter.ExactInputSingleParams memory params = ISwapRouter
+            .ExactInputSingleParams({
+                tokenIn: _tokenAddress,
+                tokenOut: WETH,
+                fee: poolFee,
+                recipient: address(this),
+                deadline: block.timestamp,
+                amountIn: _amountIn,
+                amountOutMinimum: 0,
+                sqrtPriceLimitX96: 0
+            });
+
+        amountOut = UNISWAP_ROUTER.exactInputSingle(params);
+    }
+
+    /**
+     * @notice Get DomainID from auxillary data
      * @param _auxData auxData param passed to convert() function
      * @dev appplied bit masking to retrieve first x bits to get index.
      *      The maps the index to domains map
-    */
-    function getDomainID(uint64 _auxData) public view returns (uint32 domainID) {
+     */
+    function getDomainID(uint64 _auxData)
+        public
+        view
+        returns (uint32 domainID)
+    {
         uint32 domainIndex = uint32(_auxData & DEST_DOMAIN_MASK);
 
-        if(domainIndex >= domainCount) {
+        if (domainIndex >= domainCount) {
             revert InvalidDomainID();
         }
+
         domainID = domains[domainIndex];
     }
 
     /**
-     * @notice Get destination address from auxillary data 
+     * @notice Get destination address from auxillary data
      * @param _auxData auxData param passed to convert() function
      * @dev applies bit shifting to first remove bits used by domainID,
      *      appplied bit masking to retrieve first x bits to get index.
      *      The maps the index to AddressRegistry
-    */
-    function getDestinationAddress(uint64 _auxData) public view returns (address destination) {
+     */
+    function getDestinationAddress(uint64 _auxData)
+        public
+        view
+        returns (address destination)
+    {
         _auxData = _auxData >> DEST_DOMAIN_LENGTH;
         uint64 toAddressID = (_auxData & TO_MASK);
         destination = registry.addresses(toAddressID);
@@ -221,9 +272,13 @@ contract ConnextBridge is BridgeBase {
      * @dev applies bit shifting to first remove bits used by domainID, toAddress
      *      appplied bit masking to retrieve first x bits to get index.
      *      The maps the index to AddressRegistry
-    */
-    function getSlippage(uint64 _auxData) public pure returns (uint64 slippage) {
-        _auxData = _auxData >> ( DEST_DOMAIN_LENGTH + TO_MASK_LENGTH);
+     */
+    function getSlippage(uint64 _auxData)
+        public
+        pure
+        returns (uint64 slippage)
+    {
+        _auxData = _auxData >> (DEST_DOMAIN_LENGTH + TO_MASK_LENGTH);
         slippage = (_auxData & SLIPPAGE_MASK);
     }
 
@@ -233,10 +288,19 @@ contract ConnextBridge is BridgeBase {
      * @dev applies bit shifting to first remove bits used by domainID, toAddress, slippage
      *      appplied bit masking to retrieve first x bits to get index.
      *      The maps the index to AddressRegistry
-    */
-    function getRelayerFee(uint64 _auxData) public pure returns (uint64 relayerFee) {
-        _auxData = _auxData >> ( DEST_DOMAIN_LENGTH + TO_MASK_LENGTH + SLIPPAGE_LENGTH);
-        relayerFee = (_auxData & RELAYED_FEE_MASK);
+     */
+    function getRelayerFee(uint64 _auxData, uint256 _totalInputValue)
+        public
+        pure
+        returns (uint256 relayerFeeAmountsIn)
+    {
+        _auxData = _auxData >> (DEST_DOMAIN_LENGTH + TO_MASK_LENGTH + SLIPPAGE_LENGTH);
+        uint256 relayerFeeBPS = (_auxData & RELAYED_FEE_MASK);
+        if (relayerFeeBPS > 10_000) {
+            relayerFeeBPS = 10_000;
+        }
+
+        relayerFeeAmountsIn = (relayerFeeBPS * _totalInputValue) / 10_000;
     }
 
 }

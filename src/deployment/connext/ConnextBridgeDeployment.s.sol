@@ -9,7 +9,7 @@ contract ConnextBridgeDeployment is BaseDeployment {
     function deploy() public returns (address) {
         emit log("Deploying ConnextL2Bridge bridge");
         vm.broadcast();
-        ConnextBridge bridge = new ConnextBridge(ROLLUP_PROCESSOR, 0x2b501381c6d6aFf9238526352b1c7560Aa35A7C5, address(0), tx.origin );
+        ConnextBridge bridge = new ConnextBridge(ROLLUP_PROCESSOR, 0x2b501381c6d6aFf9238526352b1c7560Aa35A7C5, 0xE592427A0AEce92De3Edee1F18E0157C05861564,address(0), tx.origin );
         emit log_named_address("Example bridge deployed to", address(bridge));
         return address(bridge);
     }
