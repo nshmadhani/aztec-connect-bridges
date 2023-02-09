@@ -3,6 +3,7 @@
 pragma solidity >=0.8.4;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {AztecTypes} from "rollup-encoder/libraries/AztecTypes.sol";
 
 import {ErrorLib} from "../base/ErrorLib.sol";
@@ -18,53 +19,45 @@ import {AddressRegistry} from "../registry/AddressRegistry.sol";
  * @notice You can use this contract to deposit funds into other L2's using connext
  * @dev  This Bridge is resposible for bridging funds from Aztec to L2 using Connext xCall.
  */
-contract ConnextBridge is BridgeBase {
+contract ConnextBridge is BridgeBase, Ownable{
+
     error InvalidDomainIndex();
     error InvalidConfiguration();
     error InvalidDomainID();
 
-    address public constant WETH = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
+    IWETH public immutable WETH9 = IWETH(0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2);
     IConnext public immutable CONNEXT;
     ISwapRouter public immutable UNISWAP_ROUTER;
 
     AddressRegistry public registry;
     
-    address public owner;
-
-
-    uint64 public constant DEST_DOMAIN_LENGTH = 5;
-    uint64 public constant TO_MASK_LENGTH = 24;
-    uint64 public constant SLIPPAGE_LENGTH = 10;
-    uint64 public constant RELAYED_FEE_LENGTH = 14;
+    
 
     /// @dev The following masks are used to decode slippage(bps), destination domain, 
     ///       relayerfee bps and destination address from 1 uint64
-
-    // Binary number 11111 (last 5 bits) from LSB
+    
+    /// Binary number 11111 (last 5 bits) from LSB
     uint64 public constant DEST_DOMAIN_MASK = 0x1F;
+    uint64 public constant DEST_DOMAIN_LENGTH = 5;
 
-    // Binary number 111111111111111111111111 (next 24 bits)
+    /// Binary number 111111111111111111111111 (next 24 bits)
     uint64 public constant TO_MASK = 0xFFFFFF;
+    uint64 public constant TO_MASK_LENGTH = 24;
 
-    // Binary number 1111111111 (next 10 bits)
+    /// Binary number 1111111111 (next 10 bits)
     uint64 public constant SLIPPAGE_MASK = 0x3FF;
+    uint64 public constant SLIPPAGE_LENGTH = 10;
 
-    // Binary number 11111111111111 (next 14 bits)
+
+    /// Binary number 11111111111111 (next 14 bits)
     uint64 public constant RELAYED_FEE_MASK = 0x3FFF;
+    uint64 public constant RELAYED_FEE_LENGTH = 14;
 
     uint32 public domainCount;
     mapping(uint32 => uint32) public domains;
 
-    uint24 public constant poolFee = 3000;
 
 
-
-    modifier onlyOwner() {
-        if (msg.sender != owner) {
-            revert ErrorLib.InvalidCaller();
-        }
-        _;
-    }
     /**
      * @notice Set address of rollup processor
      * @param _rollupProcessor Address of rollup processor
@@ -73,13 +66,25 @@ contract ConnextBridge is BridgeBase {
         address _rollupProcessor,
         address _connext,
         address _swapRouter,
-        address _registry,
-        address _onwer
+        address _registry
     ) BridgeBase(_rollupProcessor) {
         CONNEXT = IConnext(_connext);
         registry = AddressRegistry(_registry);
         UNISWAP_ROUTER = ISwapRouter(_swapRouter);
-        owner = _onwer;
+
+        uint256[] memory criteria = new uint256[](1);
+        uint32[] memory gasUsage = new uint32[](1);
+        uint32[] memory minGasPerMinute = new uint32[](1);
+
+        criteria[0] = 0;
+
+        gasUsage[0] = 200000;
+
+        minGasPerMinute[0] = 140;
+
+        SUBSIDY.setGasUsageAndMinGasPerMinute(criteria, gasUsage, minGasPerMinute);
+
+
     }
 
     receive() external payable {}
@@ -100,7 +105,7 @@ contract ConnextBridge is BridgeBase {
         uint256 _totalInputValue,
         uint256,
         uint64 _auxData,
-        address
+        address _rollupBeneficiary
     )
         external
         payable
@@ -122,7 +127,7 @@ contract ConnextBridge is BridgeBase {
             relayerFeeAmountsIn
         );
 
-        IWETH(WETH).withdraw(relayerFee);
+        WETH9.withdraw(relayerFee);
 
         _xTransfer(
             getDestinationAddress(_auxData),
@@ -133,15 +138,9 @@ contract ConnextBridge is BridgeBase {
             relayerFee
         );
 
-        return (0, 0, false);
-    }
+        SUBSIDY.claimSubsidy(0, _rollupBeneficiary);
 
-    /**
-     * @notice Transfers ownership to a new owner
-     * @param _owner new owner of the contract
-     */
-    function transferOwnership(address _owner) external onlyOwner {
-        owner = _owner;
+        return (0, 0, false);
     }
 
     /**
@@ -217,8 +216,8 @@ contract ConnextBridge is BridgeBase {
         ISwapRouter.ExactInputSingleParams memory params = ISwapRouter
             .ExactInputSingleParams({
                 tokenIn: _tokenAddress,
-                tokenOut: WETH,
-                fee: poolFee,
+                tokenOut: address(WETH9),
+                fee: 3000, //0.3%
                 recipient: address(this),
                 deadline: block.timestamp,
                 amountIn: _amountIn,
@@ -299,8 +298,26 @@ contract ConnextBridge is BridgeBase {
         if (relayerFeeBPS > 10_000) {
             relayerFeeBPS = 10_000;
         }
-
         relayerFeeAmountsIn = (relayerFeeBPS * _totalInputValue) / 10_000;
+    }
+
+     /**
+     * @notice Computes the criteria that is passed when claiming subsidy.
+     * @param _inputAssetA only subsidize erc20 tx
+     * @return criteria - which is also the Domain ID on connext
+     * @dev https://docs.connext.network/resources/supported-chains
+     */
+    function computeCriteria(
+        AztecTypes.AztecAsset calldata _inputAssetA,
+        AztecTypes.AztecAsset calldata,
+        AztecTypes.AztecAsset calldata,
+        AztecTypes.AztecAsset calldata,
+        uint64 
+    ) public view override(BridgeBase) returns (uint256) {
+        if (_inputAssetA.assetType != AztecTypes.AztecAssetType.ERC20) {
+            revert ErrorLib.InvalidInputA();
+        }
+        return 0;
     }
 
 }

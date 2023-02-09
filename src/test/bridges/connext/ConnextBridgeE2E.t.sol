@@ -46,7 +46,7 @@ contract ConnextBridgeE2ETest is BridgeTestBase {
 
 
         // Deploy a new example bridge
-        bridge = new ConnextBridge(address(ROLLUP_PROCESSOR), CONNEXT, 0xE592427A0AEce92De3Edee1F18E0157C05861564,address(addressRegistry), MULTI_SIG);
+        bridge = new ConnextBridge(address(ROLLUP_PROCESSOR), CONNEXT, 0xE592427A0AEce92De3Edee1F18E0157C05861564,address(addressRegistry));
 
         // Use the label cheatcode to mark the address with "Example Bridge" in the traces
         vm.label(address(bridge), "ConnextBridge");
@@ -66,26 +66,28 @@ contract ConnextBridgeE2ETest is BridgeTestBase {
         // addresses of all the listed ERC20 tokens
         ROLLUP_PROCESSOR.setSupportedAsset(USDC, 100000);
 
+
+        vm.stopPrank();
+
         uint32[] memory domains = new uint32[](2);
         domains[0] = MAINNET_ID;
         domains[1] = POLYGON_ID;
         bridge.addDomains(domains);
 
-        vm.stopPrank();
 
         // Fetch the id of the example bridge
         id = ROLLUP_PROCESSOR.getSupportedBridgesLength();
 
-        // Subsidize the bridge when used with USDC and register a beneficiary
-        // usdcAsset = ROLLUP_ENCODER.getRealAztecAsset(USDC);
-        // uint256 criteria = bridge.computeCriteria(usdcAsset, emptyAsset, usdcAsset, emptyAsset, 0);
-        // uint32 gasPerMinute = 200;
-        // SUBSIDY.subsidize{value: 1 ether}(address(bridge), criteria, gasPerMinute);
+        //Subsidize the bridge when used with USDC and register a beneficiary
+        usdcAsset = ROLLUP_ENCODER.getRealAztecAsset(USDC);
+        uint256 criteria = bridge.computeCriteria(usdcAsset, emptyAsset, emptyAsset, emptyAsset, 0);
+        uint32 gasPerMinute = 200;
+        SUBSIDY.subsidize{value: 1 ether}(address(bridge), criteria, gasPerMinute);
 
-        // SUBSIDY.registerBeneficiary(BENEFICIARY);
+        SUBSIDY.registerBeneficiary(BENEFICIARY);
 
-        // // Set the rollupBeneficiary on BridgeTestBase so that it gets included in the proofData
-        // ROLLUP_ENCODER.setRollupBeneficiary(BENEFICIARY);
+        // Set the rollupBeneficiary on BridgeTestBase so that it gets included in the proofData
+        ROLLUP_ENCODER.setRollupBeneficiary(BENEFICIARY);
 
     }
 
@@ -103,13 +105,18 @@ contract ConnextBridgeE2ETest is BridgeTestBase {
 
         // Computes the encoded data for the specific bridge interaction
 
-        uint64 auxData = 4950486679553;
+        //relayerFee = 00001111101000(1000 bps)(10%)
+        //slippage=0000000101(5 bps)
+        //TO_INDEX=000000000000000000000000(0)
+        //DOMAIN_ID=00001(1)
+        //1111101000000000010100000000000000000000000000001(549758498242561)
+
+        uint64 auxData = 549758498242561;
 
         ROLLUP_ENCODER.defiInteractionL2(id, usdcAsset, emptyAsset, emptyAsset, emptyAsset, auxData, _depositAmount);
 
         // Execute the rollup with the bridge interaction. Ensure that event as seen above is emitted.
-        (uint256 outputValueA, uint256 outputValueB, bool isAsync) = ROLLUP_ENCODER.processRollupAndGetBridgeResult();
-
+        ROLLUP_ENCODER.processRollupAndGetBridgeResult();
 
     }
 }

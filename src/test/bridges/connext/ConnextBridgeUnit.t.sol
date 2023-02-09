@@ -46,8 +46,7 @@ contract ConnextBridgeTest is BridgeTestBase {
             rollupProcessor,
             CONNEXT,
             0xE592427A0AEce92De3Edee1F18E0157C05861564,
-            address(addressRegistry),
-            address(this)
+            address(addressRegistry)
         );
 
         // Set ETH balance of bridge and BENEFICIARY to 0 for clarity (somebody sent ETH to that address on mainnet)
@@ -58,12 +57,17 @@ contract ConnextBridgeTest is BridgeTestBase {
         vm.label(address(USDC), "USDC");
 
         // // Subsidize the bridge when used with Dai and register a beneficiary
-        // AztecTypes.AztecAsset memory daiAsset = ROLLUP_ENCODER.getRealAztecAsset(USDC);
-        // uint256 criteria = bridge.computeCriteria(daiAsset, emptyAsset, daiAsset, emptyAsset, 0);
-        // uint32 gasPerMinute = 200;
-        // SUBSIDY.subsidize{value: 1 ether}(address(bridge), criteria, gasPerMinute);
 
-        // SUBSIDY.registerBeneficiary(BENEFICIARY);
+        AztecTypes.AztecAsset memory usdcAsset = AztecTypes.AztecAsset({
+            id: 1,
+            erc20Address: USDC,
+            assetType: AztecTypes.AztecAssetType.ERC20
+        });
+        uint256 criteria = bridge.computeCriteria(usdcAsset, emptyAsset, emptyAsset, emptyAsset, 0);
+        uint32 gasPerMinute = 200;
+        SUBSIDY.subsidize{value: 1 ether}(address(bridge), criteria, gasPerMinute);
+
+        SUBSIDY.registerBeneficiary(BENEFICIARY);
     }
 
     /**
@@ -93,18 +97,6 @@ contract ConnextBridgeTest is BridgeTestBase {
         [*] batch update 
         [*] test inconsistent indexes
      */
-
-    function testInvalidOwner(address _callerAddress) public {
-        vm.assume(_callerAddress != address(this));
-        vm.prank(_callerAddress);
-        vm.expectRevert(ErrorLib.InvalidCaller.selector);
-        bridge.transferOwnership(_callerAddress);
-    }
-
-    function testTransferOwnership() public {
-        bridge.transferOwnership(OWNER);
-        assertEq(bridge.owner(), OWNER);
-    }
 
     function testAddDomains(uint32 _domain0, uint32 _domain1) public {
         uint32[] memory domains = new uint32[](2);
@@ -199,14 +191,27 @@ contract ConnextBridgeTest is BridgeTestBase {
         assertEq(bridge.getSlippage(auxData), _slippage);
     }
 
-    // function testGetRelayerFee(uint64 _relayerFee) public {
-    //     vm.assume(_relayerFee < (2**bridge.RELAYED_FEE_LENGTH()));
-    //     uint64 auxData = _relayerFee <<
-    //         (bridge.TO_MASK_LENGTH() +
-    //             bridge.DEST_DOMAIN_LENGTH() +
-    //             bridge.SLIPPAGE_LENGTH());
-    //     assertEq(bridge.getRelayerFee(auxData), _relayerFee);
-    // }
+    function testGetRelayerFee(uint64 _relayerFee) public {
+        vm.assume(_relayerFee <= 10_000);
+
+        uint64 auxData = _relayerFee <<
+            (bridge.TO_MASK_LENGTH() +
+                bridge.DEST_DOMAIN_LENGTH() +
+                bridge.SLIPPAGE_LENGTH());
+
+        assertEq(bridge.getRelayerFee(auxData, 10_000), _relayerFee);
+    }
+    //relayeFee allows upto 2^14 but capped at 10K
+    function testGetRelayerFeeMorethan10K(uint64 _relayerFee) public {
+        vm.assume(_relayerFee > 10_000 && _relayerFee <= (2 ** bridge.RELAYED_FEE_LENGTH() - 1));
+
+        uint64 auxData = _relayerFee <<
+            (bridge.TO_MASK_LENGTH() +
+                bridge.DEST_DOMAIN_LENGTH() +
+                bridge.SLIPPAGE_LENGTH());
+
+        assertEq(bridge.getRelayerFee(auxData, 10_000), 10_000);
+    }
 
     function testInvalidCaller(address _callerAddress) public {
         vm.assume(_callerAddress != rollupProcessor);
