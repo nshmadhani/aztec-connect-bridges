@@ -9,8 +9,6 @@ import {AztecTypes} from "rollup-encoder/libraries/AztecTypes.sol";
 import {ErrorLib} from "../base/ErrorLib.sol";
 import {BridgeBase} from "../base/BridgeBase.sol";
 import {IConnext} from "../../interfaces/connext/IConnext.sol";
-import {ISwapRouter} from "../../interfaces/uniswapv3/ISwapRouter.sol";
-import {IWETH} from "../../interfaces/IWETH.sol";
 import {AddressRegistry} from "../registry/AddressRegistry.sol";
 
 /**
@@ -25,10 +23,8 @@ contract ConnextBridge is BridgeBase, Ownable{
     error InvalidConfiguration();
     error InvalidDomainID();
 
-    IWETH public immutable WETH9 = IWETH(0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2);
-    IConnext public immutable CONNEXT;
-
-    AddressRegistry public registry;
+    IConnext public Connext;
+    AddressRegistry public Registry;
 
 
     /// @dev The following masks are used to decode slippage(bps), destination domain, 
@@ -65,12 +61,10 @@ contract ConnextBridge is BridgeBase, Ownable{
     constructor(
         address _rollupProcessor,
         address _connext,
-        address _swapRouter,
         address _registry
     ) BridgeBase(_rollupProcessor) {
-        CONNEXT = IConnext(_connext);
-        registry = AddressRegistry(_registry);
-        UNISWAP_ROUTER = ISwapRouter(_swapRouter);
+        Connext = IConnext(_connext);
+        Registry = AddressRegistry(_registry);
         maxRelayerFee = 0.01 ether;
     }
 
@@ -91,7 +85,8 @@ contract ConnextBridge is BridgeBase, Ownable{
         AztecTypes.AztecAsset calldata,
         uint256 _totalInputValue,
         uint256,
-        uint64 _auxData
+        uint64 _auxData,
+        address
     )
         external
         payable
@@ -107,13 +102,13 @@ contract ConnextBridge is BridgeBase, Ownable{
             revert ErrorLib.InvalidInputA();
         }
 
-        uint256 relayerFeeAmountsIn = getRelayerFee(_auxData);
+        uint256 relayerFee = getRelayerFee(_auxData, maxRelayerFee);
 
         _xTransfer(
             getDestinationAddress(_auxData),
             getDomainID(_auxData),
             _inputAssetA.erc20Address,
-            _totalInputValue - relayerFeeAmountsIn,
+            _totalInputValue,
             getSlippage(_auxData),
             relayerFee
         );
@@ -165,6 +160,24 @@ contract ConnextBridge is BridgeBase, Ownable{
     }
 
     /**
+     * @notice sets location for connext
+     */
+    function setConnext(
+        address _newConnextAdrress
+    ) external onlyOwner {
+        Connext = IConnext(_newConnextAdrress);       
+    }
+
+    /**
+     * @notice sets which address registry to use
+     */
+    function setAddressRegistry(
+        address _addressRegistry
+    ) external onlyOwner {
+        Registry = AddressRegistry(_addressRegistry);
+    }
+
+    /**
      * @notice Transfers funds from one chain to another.
      * @param _recipient The destination address (e.g. a wallet).
      * @param _destinationDomain The destination domain ID.
@@ -181,8 +194,8 @@ contract ConnextBridge is BridgeBase, Ownable{
         uint256 _slippage,
         uint256 _relayerFee
     ) internal {
-        IERC20(_tokenAddress).approve(address(CONNEXT), _amount);
-        CONNEXT.xcall{value: _relayerFee}(
+        IERC20(_tokenAddress).approve(address(Connext), _amount);
+        Connext.xcall{value: _relayerFee}(
             _destinationDomain, // _destination: Domain ID of the destination chain
             _recipient, // _to: address receiving the funds on the destination
             _tokenAddress, // _asset: address of the token contract
@@ -228,7 +241,7 @@ contract ConnextBridge is BridgeBase, Ownable{
     {
         _auxData = _auxData >> DEST_DOMAIN_LENGTH;
         uint64 toAddressID = (_auxData & TO_MASK);
-        destination = registry.addresses(toAddressID);
+        destination = Registry.addresses(toAddressID);
     }
 
     /**
@@ -254,7 +267,7 @@ contract ConnextBridge is BridgeBase, Ownable{
      *      appplied bit masking to retrieve first x bits to get index.
      *      The maps the index to AddressRegistry
      */
-    function getRelayerFee(uint64 _auxData)
+    function getRelayerFee(uint64 _auxData, uint256 _maxRelayerFee)
         public
         pure
         returns (uint256 relayerFeeAmountsIn)
@@ -264,7 +277,7 @@ contract ConnextBridge is BridgeBase, Ownable{
         if (relayerFeeBPS > 10_000) {
             relayerFeeBPS = 10_000;
         }
-        relayerFeeAmountsIn = (relayerFeeBPS * maxRelayerFee) / 10_000;
+        relayerFeeAmountsIn = (relayerFeeBPS * _maxRelayerFee) / 10_000;
     }
 
 }

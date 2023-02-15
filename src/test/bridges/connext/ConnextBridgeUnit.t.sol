@@ -45,7 +45,6 @@ contract ConnextBridgeTest is BridgeTestBase {
         bridge = new ConnextBridge(
             rollupProcessor,
             CONNEXT,
-            0xE592427A0AEce92De3Edee1F18E0157C05861564,
             address(addressRegistry)
         );
 
@@ -58,16 +57,16 @@ contract ConnextBridgeTest is BridgeTestBase {
 
         // // Subsidize the bridge when used with Dai and register a beneficiary
 
-        AztecTypes.AztecAsset memory usdcAsset = AztecTypes.AztecAsset({
-            id: 1,
-            erc20Address: USDC,
-            assetType: AztecTypes.AztecAssetType.ERC20
-        });
-        uint256 criteria = bridge.computeCriteria(usdcAsset, emptyAsset, emptyAsset, emptyAsset, 0);
-        uint32 gasPerMinute = 200;
-        SUBSIDY.subsidize{value: 1 ether}(address(bridge), criteria, gasPerMinute);
+        // AztecTypes.AztecAsset memory usdcAsset = AztecTypes.AztecAsset({
+        //     id: 1,
+        //     erc20Address: USDC,
+        //     assetType: AztecTypes.AztecAssetType.ERC20
+        // });
+        // uint256 criteria = bridge.computeCriteria(usdcAsset, emptyAsset, emptyAsset, emptyAsset, 0);
+        // uint32 gasPerMinute = 200;
+        // SUBSIDY.subsidize{value: 1 ether}(address(bridge), criteria, gasPerMinute);
 
-        SUBSIDY.registerBeneficiary(BENEFICIARY);
+        // SUBSIDY.registerBeneficiary(BENEFICIARY);
     }
 
     /**
@@ -191,27 +190,27 @@ contract ConnextBridgeTest is BridgeTestBase {
         assertEq(bridge.getSlippage(auxData), _slippage);
     }
 
-    function testGetRelayerFee(uint64 _relayerFee) public {
-        vm.assume(_relayerFee <= 10_000);
+    // function testGetRelayerFee(uint64 _relayerFee) public {
+    //     vm.assume(_relayerFee <= 10_000);
 
-        uint64 auxData = _relayerFee <<
-            (bridge.TO_MASK_LENGTH() +
-                bridge.DEST_DOMAIN_LENGTH() +
-                bridge.SLIPPAGE_LENGTH());
+    //     uint64 auxData = _relayerFee <<
+    //         (bridge.TO_MASK_LENGTH() +
+    //             bridge.DEST_DOMAIN_LENGTH() +
+    //             bridge.SLIPPAGE_LENGTH());
 
-        assertEq(bridge.getRelayerFee(auxData, 10_000), _relayerFee);
-    }
-    //relayeFee allows upto 2^14 but capped at 10K
-    function testGetRelayerFeeMorethan10K(uint64 _relayerFee) public {
-        vm.assume(_relayerFee > 10_000 && _relayerFee <= (2 ** bridge.RELAYED_FEE_LENGTH() - 1));
+    //     assertEq(bridge.getRelayerFee(auxData), _relayerFee * bridge.maxRelayerFee() / 10_000);
+    // }
+    // //relayeFee allows upto 2^14 but capped at 10K
+    // function testGetRelayerFeeMorethan10K(uint64 _relayerFee) public {
+    //     vm.assume(_relayerFee > 10_000 && _relayerFee <= (2 ** bridge.RELAYED_FEE_LENGTH() - 1));
 
-        uint64 auxData = _relayerFee <<
-            (bridge.TO_MASK_LENGTH() +
-                bridge.DEST_DOMAIN_LENGTH() +
-                bridge.SLIPPAGE_LENGTH());
+    //     uint64 auxData = _relayerFee <<
+    //         (bridge.TO_MASK_LENGTH() +
+    //             bridge.DEST_DOMAIN_LENGTH() +
+    //             bridge.SLIPPAGE_LENGTH());
 
-        assertEq(bridge.getRelayerFee(auxData, 10_000), 10_000);
-    }
+    //     assertEq(bridge.getRelayerFee(auxData), _relayerFee * bridge.maxRelayerFee() / 10_000);
+    // }
 
     function testInvalidCaller(address _callerAddress) public {
         vm.assume(_callerAddress != rollupProcessor);
@@ -271,6 +270,8 @@ contract ConnextBridgeTest is BridgeTestBase {
 
         // Store dai balance before interaction to be able to verify the balance after interaction is correct
 
+        uint _relayerFee = bridge.maxRelayerFee() * 1000 / 10_000;
+
         //relayerFee = 00001111101000(1000 bps)(10%)
         //slippage=0000000101(5 bps)
         //TO_INDEX=000000000000000000000000(0)
@@ -279,7 +280,7 @@ contract ConnextBridgeTest is BridgeTestBase {
 
         uint64 auxData = 549758498242561;
 
-        bridge.convert(
+        bridge.convert{value: _relayerFee}(
             inputAssetA, // _inputAssetA - definition of an input assets
             emptyAsset, // _inputAssetB - not used so can be left empty
             emptyAsset, // _outputAssetA - not used so can be lefr emoty

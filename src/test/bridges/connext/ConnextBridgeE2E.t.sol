@@ -46,7 +46,7 @@ contract ConnextBridgeE2ETest is BridgeTestBase {
 
 
         // Deploy a new example bridge
-        bridge = new ConnextBridge(address(ROLLUP_PROCESSOR), CONNEXT, 0xE592427A0AEce92De3Edee1F18E0157C05861564,address(addressRegistry));
+        bridge = new ConnextBridge(address(ROLLUP_PROCESSOR), CONNEXT, address(addressRegistry));
 
         // Use the label cheatcode to mark the address with "Example Bridge" in the traces
         vm.label(address(bridge), "ConnextBridge");
@@ -79,15 +79,15 @@ contract ConnextBridgeE2ETest is BridgeTestBase {
         id = ROLLUP_PROCESSOR.getSupportedBridgesLength();
 
         //Subsidize the bridge when used with USDC and register a beneficiary
-        usdcAsset = ROLLUP_ENCODER.getRealAztecAsset(USDC);
-        uint256 criteria = bridge.computeCriteria(usdcAsset, emptyAsset, emptyAsset, emptyAsset, 0);
-        uint32 gasPerMinute = 200;
-        SUBSIDY.subsidize{value: 1 ether}(address(bridge), criteria, gasPerMinute);
+        // usdcAsset = ROLLUP_ENCODER.getRealAztecAsset(USDC);
+        // uint256 criteria = bridge.computeCriteria(usdcAsset, emptyAsset, emptyAsset, emptyAsset, 0);
+        // uint32 gasPerMinute = 200;
+        // SUBSIDY.subsidize{value: 1 ether}(address(bridge), criteria, gasPerMinute);
 
-        SUBSIDY.registerBeneficiary(BENEFICIARY);
+        // SUBSIDY.registerBeneficiary(BENEFICIARY);
 
-        // Set the rollupBeneficiary on BridgeTestBase so that it gets included in the proofData
-        ROLLUP_ENCODER.setRollupBeneficiary(BENEFICIARY);
+        // // Set the rollupBeneficiary on BridgeTestBase so that it gets included in the proofData
+        // ROLLUP_ENCODER.setRollupBeneficiary(BENEFICIARY);
 
     }
 

@@ -13,15 +13,5 @@ interface IConnext {
     uint256 _slippage,
     bytes calldata _callData
   ) external payable returns (bytes32);
-
-  function xcallIntoLocal(
-    uint32 _destination,
-    address _to,
-    address _asset,
-    address _delegate,
-    uint256 _amount,
-    uint256 _slippage,
-    bytes calldata _callData
-  ) external payable returns (bytes32);
-
+  
 }

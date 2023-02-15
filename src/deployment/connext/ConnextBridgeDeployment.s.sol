@@ -10,15 +10,13 @@ contract ConnextBridgeDeployment is BaseDeployment {
         emit log("Deploying ConnextL2Bridge bridge");
         vm.broadcast();
 
-        address registry = address(0);
+        address registry = 0xb51A65A4d1EaB576C1Fc02c5F67055Bcfb15F1D9;
         ConnextBridge bridge = new ConnextBridge(
                                         ROLLUP_PROCESSOR, 
-                                        0x2b501381c6d6aFf9238526352b1c7560Aa35A7C5, 
-                                        0xE592427A0AEce92De3Edee1F18E0157C05861564,
+                                        0x8898B472C54c31894e3B9bb83cEA802a5d0e63C6, 
                                         registry
                                     );
 
-        bridge.transferOwnership(msg.sender);
 
         emit log_named_address("ConnextL2Bridge bridge deployed to", address(bridge));
         return address(bridge);
